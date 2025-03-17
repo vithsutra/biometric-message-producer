@@ -1,0 +1,71 @@
+name: Message Producer CI/CD
+
+on: 
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build Message Producer
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate With DockerHub
+        run: echo "${{ secrets.DOCKER_HUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_HUB_USERNAME }}" --password-stdin
+
+      - name: Build and Push Docker Image
+        run: |
+          IMAGE_NAME=docker.io/vithsutratechnologies/biometric-message-producer:latest
+          docker build -t $IMAGE_NAME .
+          docker push $IMAGE_NAME
+
+  deploy:
+    name: Deploy Docker Image to Digital Ocean
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Create .env file
+        run: |
+          echo "SERVER_MODE=${{ secrets.SERVER_MODE }}" >> .env
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+          echo "MQTT_BROKER_HOST=${{ secrets.MQTT_BROKER_HOST }}" >> .env
+          echo "MQTT_BROKER_PORT=${{ secrets.MQTT_BROKER_PORT }}" >> .env
+          echo "MQTT_BROKER_USERNAME=${{ secrets.MQTT_BROKER_USERNAME }}" >> .env
+          echo "MQTT_BROKER_PASSWORD=${{ secrets.MQTT_BROKER_PASSWORD }}" >> .env
+          echo "KAFKA_BROKER_1_ADDRESS=${{ secrets.KAFKA_BROKER_1_ADDRESS }}" >> .env
+          echo "KAFKA_TOPIC_NAME=${{ secrets.KAFKA_TOPIC_NAME }}" >> .env
+
+      - name: Setup Deploy Environment in Digital Ocean Instance
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: "${{ secrets.VM_INSTANCE_HOST }}"
+          username: "${{ secrets.VM_INSTANCE_USERNAME }}"
+          key: "${{ secrets.VM_SSH_PRIVATE_KEY }}"
+          script: |
+            echo "Connected to VM"
+            mkdir -p ~/biometric/biometric-message-producer-deployment
+
+      - name: Upload .env to Digital Ocean Instance
+        run: |
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > biometric_ssh_key
+          chmod 600 biometric_ssh_key
+          scp -o StrictHostKeyChecking=no -i biometric_ssh_key .env ${{ secrets.VM_INSTANCE_USERNAME }}@${{ secrets.VM_INSTANCE_HOST }}:~/biometric/biometric-message-producer-deployment/.env
+          rm biometric_ssh_key
+
+      - name: Deploying Docker Image on Digital Ocean Instance
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: "${{ secrets.VM_INSTANCE_HOST }}"
+          username: "${{ secrets.VM_INSTANCE_USERNAME }}"
+          key: "${{ secrets.VM_SSH_PRIVATE_KEY }}"
+          script: |
+            IMAGE_NAME=docker.io/vithsutratechnologies/biometric-message-producer:latest
+            docker pull $IMAGE_NAME
+            docker ps | grep biometric-message-producer | awk '{print $1}' | xargs -I {} docker kill {}
+            docker ps -a | grep biometric-message-producer | awk '{print $1}' | xargs -I {} docker rm {}
+            docker run -d --name biometric-message-producer --env-file ~/biometric/biometric-message-producer-deployment/.env $IMAGE_NAME
