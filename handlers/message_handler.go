@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"log"
+	"strconv"
 	"strings"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -95,7 +96,7 @@ func (h *messageHandler) DeleteSyncRequestHandler(client mqtt.Client, message mq
 				MessageType:   "2",
 				ErrorStatus:   "1",
 				StudentsEmpty: "0",
-				StudentId:     "0",
+				StudentId:     0,
 			}
 			responseJson, _ := json.Marshal(response)
 			client.Publish(deviceId, 1, false, responseJson)
@@ -107,7 +108,7 @@ func (h *messageHandler) DeleteSyncRequestHandler(client mqtt.Client, message mq
 				MessageType:   "2",
 				ErrorStatus:   "0",
 				StudentsEmpty: "1",
-				StudentId:     "0",
+				StudentId:     0,
 			}
 			responseJson, _ := json.Marshal(response)
 			client.Publish(deviceId, 1, false, responseJson)
@@ -122,17 +123,19 @@ func (h *messageHandler) DeleteSyncRequestHandler(client mqtt.Client, message mq
 				MessageType:   "2",
 				ErrorStatus:   "1",
 				StudentsEmpty: "0",
-				StudentId:     "0",
+				StudentId:     0,
 			}
 			responseJson, _ := json.Marshal(response)
 			client.Publish(deviceId, 1, false, responseJson)
 			return
 		}
+		studentIdInt, _ := strconv.Atoi(studentId)
+
 		response := models.DeleteSyncResponse{
 			MessageType:   "2",
 			ErrorStatus:   "0",
 			StudentsEmpty: "0",
-			StudentId:     studentId,
+			StudentId:     uint32(studentIdInt),
 		}
 		responseJson, _ := json.Marshal(response)
 		client.Publish(deviceId, 1, false, responseJson)
@@ -216,11 +219,14 @@ func (h *messageHandler) InsertSyncRequestHandler(client mqtt.Client, message mq
 			client.Publish(deviceId, 1, false, responseJson)
 			return
 		}
+
+		studentIdInt, _ := strconv.Atoi(studentId)
+
 		response := models.InsertSyncResponse{
 			MessageType:     "4",
 			ErrorStatus:     "0",
 			StudentsEmpty:   "0",
-			StudentId:       studentId,
+			StudentId:       uint32(studentIdInt),
 			FingerPrintData: fingerprintData,
 		}
 		responseJson, _ := json.Marshal(response)
@@ -245,7 +251,8 @@ func (h *messageHandler) InsertSyncAckRequestHandler(client mqtt.Client, message
 			client.Publish(deviceId, 1, false, responseJson)
 			return
 		}
-		if err := h.dbRepo.DeleteStudentFromInserts(deviceId, req.StudentId); err != nil {
+
+		if err := h.dbRepo.DeleteStudentFromInserts(deviceId, strconv.Itoa(int(req.StudentId))); err != nil {
 			log.Println("error occurred while deleting the student from inserts, Device Id: ", deviceId, " Error: ", err.Error())
 			response := models.InsertSyncAckResponse{
 				MessageType: "5",
@@ -284,7 +291,7 @@ func (h *messageHandler) UpdateAttendanceRequestHandler(client mqtt.Client, mess
 
 		attendance := models.Attendance{
 			DeviceId:  deviceId,
-			StudentId: req.StudentId,
+			StudentId: strconv.Itoa(int(req.StudentId)),
 			TimeStamp: req.TimeStamp,
 		}
 
@@ -301,6 +308,7 @@ func (h *messageHandler) UpdateAttendanceRequestHandler(client mqtt.Client, mess
 
 		response := models.UpdateAttendanceResponse{
 			MessageType: "6",
+			Index:       req.Index,
 			ErrorStatus: "0",
 		}
 		responseJson, _ := json.Marshal(response)

@@ -8,7 +8,7 @@ type DeleteSyncResponse struct {
 	MessageType   string `json:"mty"`
 	ErrorStatus   string `json:"est"`
 	StudentsEmpty string `json:"ste"`
-	StudentId     string `json:"sid"`
+	StudentId     uint32 `json:"sid"`
 }
 
 type DeleteSyncAckRequest struct {
@@ -24,12 +24,12 @@ type InsertSyncResponse struct {
 	MessageType     string `json:"mty"`
 	ErrorStatus     string `json:"est"`
 	StudentsEmpty   string `json:"ste"`
-	StudentId       string `json:"sid"`
+	StudentId       uint32 `json:"sid"`
 	FingerPrintData string `json:"fpd"`
 }
 
 type InsertSyncAckRequest struct {
-	StudentId string `json:"sid"`
+	StudentId uint32 `json:"sid"`
 }
 
 type InsertSyncAckResponse struct {
@@ -38,13 +38,15 @@ type InsertSyncAckResponse struct {
 }
 
 type UpdateAttendanceRequest struct {
-	StudentId string `json:"sid"`
+	StudentId uint32 `json:"sid"`
+	Index     uint32 `json:"index"`
 	TimeStamp string `json:"tmstmp"`
 }
 
 type UpdateAttendanceResponse struct {
 	MessageType string `json:"mty"`
 	ErrorStatus string `json:"est"`
+	Index       uint32 `json:"index"`
 }
 
 type Attendance struct {
