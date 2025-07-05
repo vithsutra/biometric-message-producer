@@ -79,7 +79,7 @@ jobs:
             echo "Starting new $CONTAINER_NAME container..."
             docker run -d \
               --name $CONTAINER_NAME \
-              --env-file $HOME/biometric/biometric-message-producer-deployment/.env
+              --env-file $HOME/biometric/biometric-message-producer-deployment/.env \
               $IMAGE_NAME
 
             echo "Deployment completed."
