@@ -8,13 +8,12 @@ import (
 )
 
 type Variables struct {
-	DatabaseUrl         string
-	MqttBrokerHost      string
-	MqttBrokerPort      string
-	MqttBrokerUserName  string
-	MqttBrokerPassword  string
-	KafkaBroker1Address string
-	KafkaTopic          string
+	DatabaseUrl        string
+	MqttBrokerHost     string
+	MqttBrokerPort     string
+	MqttBrokerUserName string
+	MqttBrokerPassword string
+	RedisUrl           string
 }
 
 func InitConfig() *Variables {
@@ -62,16 +61,10 @@ func InitConfig() *Variables {
 		log.Fatalln("missing or empty MQTT_BROKER_PASSWORD")
 	}
 
-	kafkaBroker1Address := os.Getenv("KAFKA_BROKER_1_ADDRESS")
+	redisUrl := os.Getenv("REDIS_URL")
 
-	if kafkaBroker1Address == "" {
-		log.Fatalln("missing or empty KAFKA_BROKER_1_ADDRESS env variable")
-	}
-
-	kafkaTopic := os.Getenv("KAFKA_TOPIC_NAME")
-
-	if kafkaTopic == "" {
-		log.Fatalln("missing KAFKA_TOPIC_NAME env variable")
+	if redisUrl == "" {
+		log.Fatalln("missing or empty REDIS_URL")
 	}
 
 	variable.DatabaseUrl = dbUrl
@@ -79,8 +72,7 @@ func InitConfig() *Variables {
 	variable.MqttBrokerPort = mqttBrokerPort
 	variable.MqttBrokerUserName = mqttBrokerUserName
 	variable.MqttBrokerPassword = mqttBrokerPassword
-	variable.KafkaBroker1Address = kafkaBroker1Address
-	variable.KafkaTopic = kafkaTopic
+	variable.RedisUrl = redisUrl
 
 	return variable
 }

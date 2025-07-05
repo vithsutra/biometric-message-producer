@@ -4,15 +4,26 @@ import (
 	"log"
 	"time"
 
-	"github.com/vithsutra/biometric-project-message-processor/handlers"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/vithsutra/biometric-project-message-processor/processor"
 	"github.com/vithsutra/biometric-project-message-processor/repository"
 )
 
-func Start(db *database, mqttConn *mqttConn, kafkaProducer *kafkaProducer) {
+func Start(db *database, mqttConn *mqttConn, redisConn *redisConn) {
 
 	dbRepo := repository.NewPostgresRepository(db.conn)
-	kafkaRepo := repository.NewKafkaRepository(kafkaProducer.producer, kafkaProducer.topic)
-	messageHandler := handlers.NewMessageHandler(dbRepo, kafkaRepo)
+
+	cacheRepo := repository.NewRedisRepository(redisConn.client)
+
+	messageProcessor := processor.NewMessageProcessor(
+		mqttConn.client,
+		dbRepo,
+		cacheRepo,
+		20,
+		500,
+	)
+
+	messageProcessor.Start()
 
 	for {
 		if status := mqttConn.client.IsConnected(); !status {
@@ -21,15 +32,14 @@ func Start(db *database, mqttConn *mqttConn, kafkaProducer *kafkaProducer) {
 			}
 
 			if mqttConn.client.IsConnected() {
-				mqttConn.client.Subscribe("+/connection", 1, messageHandler.DeviceConnectionRequestHandler)
-				mqttConn.client.Subscribe("+/disconnection", 1, messageHandler.DeviceDisconnectionRequestHandler)
-				mqttConn.client.Subscribe("+/deletesync", 1, messageHandler.DeleteSyncRequestHandler)
-				mqttConn.client.Subscribe("+/deletesyncack", 1, messageHandler.DeleteSyncAckRequestHandler)
-				mqttConn.client.Subscribe("+/insertsync", 1, messageHandler.InsertSyncRequestHandler)
-				mqttConn.client.Subscribe("+/insertsyncack", 1, messageHandler.InsertSyncAckRequestHandler)
-				mqttConn.client.Subscribe("+/attendance", 1, messageHandler.UpdateAttendanceRequestHandler)
+				//for device publish topic -> vs242s001/connection/message
+				//device_id/process/message_type/message
+				mqttConn.client.Subscribe("+/process/+/message", 1, func(c mqtt.Client, m mqtt.Message) {
+					messageProcessor.Push(m)
+				})
 			}
 		}
+
 		time.Sleep(time.Second * 1)
 	}
 }

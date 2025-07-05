@@ -1,6 +1,13 @@
 package main
 
-import "github.com/vithsutra/biometric-project-message-processor/config"
+import (
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/vithsutra/biometric-project-message-processor/config"
+)
 
 func main() {
 
@@ -19,10 +26,20 @@ func main() {
 		config.MqttBrokerPassword,
 	)
 
-	producer := NewKafkaProducer([]string{config.KafkaBroker1Address}, config.KafkaTopic)
+	redisConn := NewRedisConnection(config.RedisUrl)
 
-	defer producer.CloseConnection()
+	redisConn.CheckRedisConnection()
 
-	Start(db, mqttConn, producer)
+	defer redisConn.CloseConnection()
 
+	go Start(db, mqttConn, redisConn)
+
+	//graceful shutdown
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	<-quit
+
+	log.Println("shutting the service down...")
 }

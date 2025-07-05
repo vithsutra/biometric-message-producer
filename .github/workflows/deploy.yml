@@ -24,7 +24,7 @@ jobs:
           docker push $IMAGE_NAME
 
   deploy:
-    name: Deploy Docker Image to Digital Ocean
+    name: Deploy Docker Image to Remote VM
     runs-on: ubuntu-latest
     needs: build
 
@@ -37,10 +37,9 @@ jobs:
           echo "MQTT_BROKER_PORT=${{ secrets.MQTT_BROKER_PORT }}" >> .env
           echo "MQTT_BROKER_USERNAME=${{ secrets.MQTT_BROKER_USERNAME }}" >> .env
           echo "MQTT_BROKER_PASSWORD=${{ secrets.MQTT_BROKER_PASSWORD }}" >> .env
-          echo "KAFKA_BROKER_1_ADDRESS=${{ secrets.KAFKA_BROKER_1_ADDRESS }}" >> .env
-          echo "KAFKA_TOPIC_NAME=${{ secrets.KAFKA_TOPIC_NAME }}" >> .env
+          echo "REDIS_URL=${{ secrets.REDIS_URL }}" >> .env
 
-      - name: Setup Deploy Environment in Digital Ocean Instance
+      - name: Setup Deploy Environment in Remote VM
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: "${{ secrets.VM_INSTANCE_HOST }}"
@@ -50,14 +49,14 @@ jobs:
             echo "Connected to VM"
             mkdir -p ~/biometric/biometric-message-producer-deployment
 
-      - name: Upload .env to Digital Ocean Instance
+      - name: Copy .env to Remote VM
         run: |
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > biometric_ssh_key
           chmod 600 biometric_ssh_key
           scp -o StrictHostKeyChecking=no -i biometric_ssh_key .env ${{ secrets.VM_INSTANCE_USERNAME }}@${{ secrets.VM_INSTANCE_HOST }}:~/biometric/biometric-message-producer-deployment/.env
           rm biometric_ssh_key
 
-      - name: Deploying Docker Image on Digital Ocean Instance
+      - name: Deploying Docker Image on Remote VM
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: "${{ secrets.VM_INSTANCE_HOST }}"
@@ -65,7 +64,22 @@ jobs:
           key: "${{ secrets.VM_SSH_PRIVATE_KEY }}"
           script: |
             IMAGE_NAME=docker.io/vithsutratechnologies/biometric-message-producer:latest
+            CONTAINER_NAME=biometric-message-producer
+            echo "Pulling latest $IMAGE_NAME image..."
             docker pull $IMAGE_NAME
-            docker ps | grep biometric-message-producer | awk '{print $1}' | xargs -I {} docker kill {}
-            docker ps -a | grep biometric-message-producer | awk '{print $1}' | xargs -I {} docker rm {}
-            docker run -d --name biometric-message-producer --env-file ~/biometric/biometric-message-producer-deployment/.env $IMAGE_NAME
+
+            echo "Stopping and removing existing $CONTAINER_NAME container if exists..."
+            docker ps -q --filter "name=$CONTAINER_NAME" | xargs -r docker stop
+            docker ps -aq --filter "name=$CONTAINER_NAME" | xargs -r docker rm
+
+            echo "Pruning unused images and containers..."
+            docker container prune -f
+            docker image prune -a -f
+
+            echo "Starting new $CONTAINER_NAME container..."
+            docker run -d \
+              --name $CONTAINER_NAME \
+              --env-file $HOME/biometric/biometric-message-producer-deployment/.env
+              $IMAGE_NAME
+
+            echo "Deployment completed."
