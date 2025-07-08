@@ -346,6 +346,8 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 		return
 	}
 
+	status = true
+
 	if status {
 		studentId, err := p.dbRepo.GetStudentId(deviceId, strconv.Itoa(int(req.StudentUnitId)))
 
