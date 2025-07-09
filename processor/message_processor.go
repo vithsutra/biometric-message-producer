@@ -330,28 +330,26 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 		return
 	}
 
-	status, err := p.cacheRepo.CheckMessageDuplication(req.MessageId)
+	// status, err := p.cacheRepo.CheckMessageDuplication(req.MessageId)
 
-	log.Println(status)
+	// if err != nil {
+	// 	log.Println("error occurred in redis while checking attendance message duplication, DeviceId: ", deviceId, " Error: ", err.Error())
+	// 	response := models.UpdateAttendanceResponse{
+	// 		MessageType: 6,
+	// 		ErrorStatus: 1,
+	// 	}
 
-	if err != nil {
-		log.Println("error occurred in redis while checking attendance message duplication, DeviceId: ", deviceId, " Error: ", err.Error())
-		response := models.UpdateAttendanceResponse{
-			MessageType: 6,
-			ErrorStatus: 1,
-		}
+	// 	responseJson, _ := json.Marshal(response)
+	// 	client.Publish(deviceId, 1, false, responseJson)
+	// 	return
+	// }
 
-		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
-		return
-	}
+	// status := true
 
-	status = true
+	log.Println(req.StudentUnitId, req.TimeStamp)
 
-	if status {
+	if true {
 		studentId, err := p.dbRepo.GetStudentId(deviceId, strconv.Itoa(int(req.StudentUnitId)))
-
-		log.Println(studentId)
 
 		if err != nil {
 			log.Println("error occurred while updating the student attendance, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())

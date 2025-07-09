@@ -38,7 +38,7 @@ type InsertSyncAckResponse struct {
 }
 
 type UpdateAttendanceRequest struct {
-	MessageId     string `json:"mid"`
+	// MessageId     string `json:"mid"`
 	StudentUnitId uint16 `json:"sid"`
 	Index         uint32 `json:"index"`
 	TimeStamp     string `json:"tmstmp"`
