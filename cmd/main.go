@@ -26,13 +26,7 @@ func main() {
 		config.MqttBrokerPassword,
 	)
 
-	redisConn := NewRedisConnection(config.RedisUrl)
-
-	redisConn.CheckRedisConnection()
-
-	defer redisConn.CloseConnection()
-
-	go Start(db, mqttConn, redisConn)
+	go Start(db, mqttConn)
 
 	//graceful shutdown
 

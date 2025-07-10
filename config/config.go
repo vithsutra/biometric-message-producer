@@ -13,7 +13,6 @@ type Variables struct {
 	MqttBrokerPort     string
 	MqttBrokerUserName string
 	MqttBrokerPassword string
-	RedisUrl           string
 }
 
 func InitConfig() *Variables {
@@ -61,18 +60,11 @@ func InitConfig() *Variables {
 		log.Fatalln("missing or empty MQTT_BROKER_PASSWORD")
 	}
 
-	redisUrl := os.Getenv("REDIS_URL")
-
-	if redisUrl == "" {
-		log.Fatalln("missing or empty REDIS_URL")
-	}
-
 	variable.DatabaseUrl = dbUrl
 	variable.MqttBrokerHost = mqttBrokerHost
 	variable.MqttBrokerPort = mqttBrokerPort
 	variable.MqttBrokerUserName = mqttBrokerUserName
 	variable.MqttBrokerPassword = mqttBrokerPassword
-	variable.RedisUrl = redisUrl
 
 	return variable
 }

@@ -15,14 +15,12 @@ type messageProcessor struct {
 	messageQueue     chan mqtt.Message
 	mqttClient       mqtt.Client
 	dbRepo           models.DeviceDatabseInterface
-	cacheRepo        models.DeviceCacheInterface
 	workerNodesCount uint32
 }
 
 func NewMessageProcessor(
 	mqttClient mqtt.Client,
 	dbRepo models.DeviceDatabseInterface,
-	cacheRepo models.DeviceCacheInterface,
 	workerNodesCount uint32,
 	queueBufferSize uint32,
 ) *messageProcessor {
@@ -30,7 +28,6 @@ func NewMessageProcessor(
 		messageQueue:     make(chan mqtt.Message, queueBufferSize),
 		mqttClient:       mqttClient,
 		dbRepo:           dbRepo,
-		cacheRepo:        cacheRepo,
 		workerNodesCount: workerNodesCount,
 	}
 }
@@ -129,6 +126,7 @@ func (p *messageProcessor) processDeviceDisconnectionRequest(client mqtt.Client,
 }
 
 func (p *messageProcessor) processDeviceDeleteSyncRequest(client mqtt.Client, deviceId string, message []byte) {
+
 	exists, err := p.dbRepo.CheckStudentsExistsInDeletes(deviceId)
 
 	if err != nil {
@@ -202,7 +200,8 @@ func (p *messageProcessor) processDeviceDeleteSyncAckRequest(client mqtt.Client,
 			ErrorStatus: 1,
 		}
 
-		client.Publish(deviceId, 1, false, response)
+		responseJson, _ := json.Marshal(response)
+		client.Publish(deviceId, 1, false, responseJson)
 		return
 	}
 
@@ -212,7 +211,8 @@ func (p *messageProcessor) processDeviceDeleteSyncAckRequest(client mqtt.Client,
 			MessageType: 3,
 			ErrorStatus: 1,
 		}
-		client.Publish(deviceId, 1, false, response)
+		responseJson, _ := json.Marshal(response)
+		client.Publish(deviceId, 1, false, responseJson)
 		return
 	}
 
@@ -220,8 +220,9 @@ func (p *messageProcessor) processDeviceDeleteSyncAckRequest(client mqtt.Client,
 		MessageType: 3,
 		ErrorStatus: 0,
 	}
+	responseJson, _ := json.Marshal(response)
+	client.Publish(deviceId, 1, false, responseJson)
 
-	client.Publish(deviceId, 1, false, response)
 }
 
 func (p *messageProcessor) processDeviceInsertSyncRequest(client mqtt.Client, deviceId string, message []byte) {
@@ -330,28 +331,54 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 		return
 	}
 
-	// status, err := p.cacheRepo.CheckMessageDuplication(req.MessageId)
+	studentId, err := p.dbRepo.GetStudentId(deviceId, strconv.Itoa(int(req.StudentUnitId)))
 
-	// if err != nil {
-	// 	log.Println("error occurred in redis while checking attendance message duplication, DeviceId: ", deviceId, " Error: ", err.Error())
-	// 	response := models.UpdateAttendanceResponse{
-	// 		MessageType: 6,
-	// 		ErrorStatus: 1,
-	// 	}
+	if err != nil {
+		log.Println("error occurred while updating the student attendance, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())
+		response := models.UpdateAttendanceResponse{
+			MessageType: 6,
+			ErrorStatus: 1,
+		}
 
-	// 	responseJson, _ := json.Marshal(response)
-	// 	client.Publish(deviceId, 1, false, responseJson)
-	// 	return
-	// }
+		responseJson, _ := json.Marshal(response)
+		client.Publish(deviceId, 1, false, responseJson)
+		return
+	}
 
-	// status := true
+	t, err := time.Parse("2006-01-02T15:04:05", req.TimeStamp)
 
-	log.Println(req.StudentUnitId, req.TimeStamp)
+	if err != nil {
+		log.Println("error occurred while parsing the attendance timestamp, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())
+		response := models.UpdateAttendanceResponse{
+			MessageType: 6,
+			ErrorStatus: 1,
+		}
 
-	if true {
-		studentId, err := p.dbRepo.GetStudentId(deviceId, strconv.Itoa(int(req.StudentUnitId)))
+		responseJson, _ := json.Marshal(response)
+		client.Publish(deviceId, 1, false, responseJson)
+		return
+	}
 
-		if err != nil {
+	date := t.Format("2006-01-02")
+
+	tm := t.Format("15:04")
+
+	isLogout, err := p.dbRepo.CheckLoginOrLogout(studentId, date)
+
+	if err != nil {
+		log.Println("error occurred with database while checking attedance login or logout, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())
+		response := models.UpdateAttendanceResponse{
+			MessageType: 6,
+			ErrorStatus: 1,
+		}
+
+		responseJson, _ := json.Marshal(response)
+		client.Publish(deviceId, 1, false, responseJson)
+		return
+	}
+
+	if isLogout {
+		if err := p.dbRepo.UpdateAttendanceLog(studentId, date, tm); err != nil {
 			log.Println("error occurred while updating the student attendance, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())
 			response := models.UpdateAttendanceResponse{
 				MessageType: 6,
@@ -363,10 +390,23 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 			return
 		}
 
-		t, err := time.Parse("2006-01-02T15:04:05", req.TimeStamp)
+		response := models.UpdateAttendanceResponse{
+			MessageType: 6,
+			ErrorStatus: 0,
+			Index:       req.Index,
+		}
+		responseJson, _ := json.Marshal(response)
+		client.Publish(deviceId, 1, false, responseJson)
+	} else {
+		att := new(models.Attendance)
 
-		if err != nil {
-			log.Println("error occurred while parsing the attendance timestamp, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())
+		att.StudentId = studentId
+		att.Date = date
+		att.Login = tm
+		att.Logout = "25:00"
+
+		if err := p.dbRepo.InsertAttendanceLog(att); err != nil {
+			log.Println("error occurred with database while inserting the attendance, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())
 			response := models.UpdateAttendanceResponse{
 				MessageType: 6,
 				ErrorStatus: 1,
@@ -377,73 +417,13 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 			return
 		}
 
-		date := t.Format("2006-01-02")
-
-		tm := t.Format("15:04")
-
-		isLogout, err := p.dbRepo.CheckLoginOrLogout(studentId, date)
-
-		if err != nil {
-			log.Println("error occurred with database while checking attedance login or logout, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())
-			response := models.UpdateAttendanceResponse{
-				MessageType: 6,
-				ErrorStatus: 1,
-			}
-
-			responseJson, _ := json.Marshal(response)
-			client.Publish(deviceId, 1, false, responseJson)
-			return
+		response := models.UpdateAttendanceResponse{
+			MessageType: 6,
+			ErrorStatus: 0,
+			Index:       req.Index,
 		}
-
-		if isLogout {
-			if err := p.dbRepo.UpdateAttendanceLog(studentId, date, tm); err != nil {
-				log.Println("error occurred while updating the student attendance, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())
-				response := models.UpdateAttendanceResponse{
-					MessageType: 6,
-					ErrorStatus: 1,
-				}
-
-				responseJson, _ := json.Marshal(response)
-				client.Publish(deviceId, 1, false, responseJson)
-				return
-			}
-
-			response := models.UpdateAttendanceResponse{
-				MessageType: 6,
-				ErrorStatus: 0,
-				Index:       req.Index,
-			}
-			responseJson, _ := json.Marshal(response)
-			client.Publish(deviceId, 1, false, responseJson)
-		} else {
-			att := new(models.Attendance)
-
-			att.StudentId = studentId
-			att.Date = date
-			att.Login = tm
-			att.Logout = "25:00"
-
-			if err := p.dbRepo.InsertAttendanceLog(att); err != nil {
-				log.Println("error occurred with database while inserting the attendance, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())
-				response := models.UpdateAttendanceResponse{
-					MessageType: 6,
-					ErrorStatus: 1,
-				}
-
-				responseJson, _ := json.Marshal(response)
-				client.Publish(deviceId, 1, false, responseJson)
-				return
-			}
-
-			response := models.UpdateAttendanceResponse{
-				MessageType: 6,
-				ErrorStatus: 0,
-				Index:       req.Index,
-			}
-			responseJson, _ := json.Marshal(response)
-			client.Publish(deviceId, 1, false, responseJson)
-		}
-
+		responseJson, _ := json.Marshal(response)
+		client.Publish(deviceId, 1, false, responseJson)
 	}
 
 }

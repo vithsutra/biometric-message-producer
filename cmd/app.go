@@ -9,16 +9,13 @@ import (
 	"github.com/vithsutra/biometric-project-message-processor/repository"
 )
 
-func Start(db *database, mqttConn *mqttConn, redisConn *redisConn) {
+func Start(db *database, mqttConn *mqttConn) {
 
 	dbRepo := repository.NewPostgresRepository(db.conn)
-
-	cacheRepo := repository.NewRedisRepository(redisConn.client)
 
 	messageProcessor := processor.NewMessageProcessor(
 		mqttConn.client,
 		dbRepo,
-		cacheRepo,
 		20,
 		500,
 	)
