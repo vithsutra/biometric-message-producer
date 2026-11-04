@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,10 +20,16 @@ func NewDatabase(dbUrl string) *database {
 		log.Fatalln("error occurred while connecting to databse, Error: ", err.Error())
 	}
 
-	config.MaxConns = 8
-	config.MinConns = 2
+	config.MaxConns = 25
+	config.MinConns = 5
+	config.MaxConnLifetime = 30 * time.Minute
+	config.MaxConnIdleTime = 5 * time.Minute
+	config.HealthCheckPeriod = 1 * time.Minute
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.NewWithConfig(ctx, config)
 
 	if err != nil {
 		log.Fatalln("error occurred while connecting to database, Error: ", err.Error())
@@ -34,7 +41,10 @@ func NewDatabase(dbUrl string) *database {
 }
 
 func (db *database) CheckDatabaseConnection() {
-	if err := db.conn.Ping(context.Background()); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.conn.Ping(ctx); err != nil {
 		log.Fatalln("failed to ping to the database, Error: ", err.Error())
 	}
 	log.Println("connected to the database")

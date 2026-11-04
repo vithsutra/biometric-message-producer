@@ -12,6 +12,8 @@ RUN go build -o ./bin/main ./cmd/*
 
 FROM alpine:latest
 
+RUN apk --no-cache add ca-certificates tzdata
+
 WORKDIR /app
 
 COPY --from=build /app/bin/main .

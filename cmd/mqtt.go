@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/google/uuid"
@@ -13,7 +14,7 @@ type mqttConn struct {
 }
 
 func onMqttConnection(client mqtt.Client) {
-	log.Println("connected to broker")
+	log.Println("connected to mqtt broker")
 }
 
 func onMqttDisconnection(client mqtt.Client, err error) {
@@ -27,6 +28,12 @@ func NewMqttConnection(brokerHost, brokerPort, userName, password string) *mqttC
 	opts.SetClientID(uuid.NewString())
 	opts.SetUsername(userName)
 	opts.SetPassword(password)
+	opts.SetAutoReconnect(true)
+	opts.SetConnectRetry(true)
+	opts.SetConnectRetryInterval(2 * time.Second)
+	opts.SetMaxReconnectInterval(10 * time.Second)
+	opts.SetKeepAlive(30 * time.Second)
+	opts.SetPingTimeout(10 * time.Second)
 	opts.OnConnect = onMqttConnection
 	opts.OnConnectionLost = onMqttDisconnection
 
@@ -35,5 +42,4 @@ func NewMqttConnection(brokerHost, brokerPort, userName, password string) *mqttC
 	return &mqttConn{
 		client: client,
 	}
-
 }

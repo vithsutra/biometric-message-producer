@@ -32,14 +32,31 @@ func NewMessageProcessor(
 	}
 }
 
+func (p *messageProcessor) publishResponse(client mqtt.Client, deviceId string, payload []byte) {
+	if client == nil || !client.IsConnected() {
+		log.Println("cannot publish response: MQTT client not connected, DeviceId:", deviceId)
+		return
+	}
+	token := client.Publish(deviceId, 1, false, payload)
+	go func() {
+		if token.WaitTimeout(3*time.Second) && token.Error() != nil {
+			log.Println("failed to publish to device:", deviceId, "Error:", token.Error().Error())
+		}
+	}()
+}
+
 func (p *messageProcessor) processMessage(c mqtt.Client, message mqtt.Message) {
+	if message == nil {
+		return
+	}
 	topicArr := strings.Split(message.Topic(), "/")
 
 	if len(topicArr) > 3 {
-		deviceId := topicArr[0]
-		deviceId = strings.Trim(deviceId, " ")
-		messageType := topicArr[2]
-		messageType = strings.Trim(messageType, " ")
+		deviceId := strings.TrimSpace(topicArr[0])
+		if deviceId == "" {
+			return
+		}
+		messageType := strings.TrimSpace(topicArr[2])
 		switch messageType {
 		case "connection":
 			p.processDeviceConnectionRequest(c, deviceId, message.Payload())
@@ -61,16 +78,30 @@ func (p *messageProcessor) processMessage(c mqtt.Client, message mqtt.Message) {
 
 func (p *messageProcessor) Start() {
 	for i := 0; i < int(p.workerNodesCount); i++ {
-		go func() {
+		go func(workerID int) {
 			for m := range p.messageQueue {
-				p.processMessage(p.mqttClient, m)
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							log.Printf("[PANIC RECOVERED] Worker %d recovered from panic: %v\n", workerID, r)
+						}
+					}()
+					p.processMessage(p.mqttClient, m)
+				}()
 			}
-		}()
+		}(i)
 	}
 }
 
 func (p *messageProcessor) Push(message mqtt.Message) {
-	p.messageQueue <- message
+	if message == nil {
+		return
+	}
+	select {
+	case p.messageQueue <- message:
+	case <-time.After(500 * time.Millisecond):
+		log.Println("[WARNING] messageQueue full, dropped message to avoid MQTT deadlock! Topic:", message.Topic())
+	}
 }
 
 func (p *messageProcessor) processDeviceConnectionRequest(client mqtt.Client, deviceId string, message []byte) {
@@ -84,7 +115,7 @@ func (p *messageProcessor) processDeviceConnectionRequest(client mqtt.Client, de
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -97,7 +128,7 @@ func (p *messageProcessor) processDeviceConnectionRequest(client mqtt.Client, de
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -108,7 +139,7 @@ func (p *messageProcessor) processDeviceConnectionRequest(client mqtt.Client, de
 			ErrorStatus: 1,
 		}
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 	response := models.ConnectionUpdateResponse{
@@ -116,7 +147,7 @@ func (p *messageProcessor) processDeviceConnectionRequest(client mqtt.Client, de
 		ErrorStatus: 0,
 	}
 	responseJson, _ := json.Marshal(response)
-	client.Publish(deviceId, 1, false, responseJson)
+	p.publishResponse(client, deviceId, responseJson)
 }
 
 func (p *messageProcessor) processDeviceDisconnectionRequest(client mqtt.Client, deviceId string, message []byte) {
@@ -140,7 +171,7 @@ func (p *messageProcessor) processDeviceDeleteSyncRequest(client mqtt.Client, de
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -153,7 +184,7 @@ func (p *messageProcessor) processDeviceDeleteSyncRequest(client mqtt.Client, de
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -170,7 +201,7 @@ func (p *messageProcessor) processDeviceDeleteSyncRequest(client mqtt.Client, de
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -184,7 +215,7 @@ func (p *messageProcessor) processDeviceDeleteSyncRequest(client mqtt.Client, de
 	}
 
 	responseJson, _ := json.Marshal(response)
-	client.Publish(deviceId, 1, false, responseJson)
+	p.publishResponse(client, deviceId, responseJson)
 
 }
 
@@ -201,7 +232,7 @@ func (p *messageProcessor) processDeviceDeleteSyncAckRequest(client mqtt.Client,
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -212,7 +243,7 @@ func (p *messageProcessor) processDeviceDeleteSyncAckRequest(client mqtt.Client,
 			ErrorStatus: 1,
 		}
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -221,7 +252,7 @@ func (p *messageProcessor) processDeviceDeleteSyncAckRequest(client mqtt.Client,
 		ErrorStatus: 0,
 	}
 	responseJson, _ := json.Marshal(response)
-	client.Publish(deviceId, 1, false, responseJson)
+	p.publishResponse(client, deviceId, responseJson)
 
 }
 
@@ -236,7 +267,7 @@ func (p *messageProcessor) processDeviceInsertSyncRequest(client mqtt.Client, de
 			ErrorStatus: 1,
 		}
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -247,7 +278,7 @@ func (p *messageProcessor) processDeviceInsertSyncRequest(client mqtt.Client, de
 			StudentsEmpty: 1,
 		}
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -260,7 +291,7 @@ func (p *messageProcessor) processDeviceInsertSyncRequest(client mqtt.Client, de
 			ErrorStatus: 1,
 		}
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -275,7 +306,7 @@ func (p *messageProcessor) processDeviceInsertSyncRequest(client mqtt.Client, de
 	}
 
 	responseJson, _ := json.Marshal(response)
-	client.Publish(deviceId, 1, false, responseJson)
+	p.publishResponse(client, deviceId, responseJson)
 }
 
 func (p *messageProcessor) processDeviceInsertSyncAckRequest(client mqtt.Client, deviceId string, message []byte) {
@@ -288,7 +319,7 @@ func (p *messageProcessor) processDeviceInsertSyncAckRequest(client mqtt.Client,
 			ErrorStatus: 1,
 		}
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -301,7 +332,7 @@ func (p *messageProcessor) processDeviceInsertSyncAckRequest(client mqtt.Client,
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -311,7 +342,7 @@ func (p *messageProcessor) processDeviceInsertSyncAckRequest(client mqtt.Client,
 	}
 
 	responseJson, _ := json.Marshal(response)
-	client.Publish(deviceId, 1, false, responseJson)
+	p.publishResponse(client, deviceId, responseJson)
 }
 
 func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId string, message []byte) {
@@ -324,10 +355,11 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 		response := models.UpdateAttendanceResponse{
 			MessageType: 6,
 			ErrorStatus: 1,
+			Index:       req.Index,
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -338,24 +370,30 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 		response := models.UpdateAttendanceResponse{
 			MessageType: 6,
 			ErrorStatus: 1,
+			Index:       req.Index,
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
-	t, err := time.Parse("2006-01-02T15:04:05", req.TimeStamp)
+	var t time.Time
+	t, err = time.Parse("2006-01-02T15:04:05", req.TimeStamp)
+	if err != nil {
+		t, err = time.Parse("2006-01-02 15:04:05", req.TimeStamp)
+	}
 
 	if err != nil {
 		log.Println("error occurred while parsing the attendance timestamp, DeviceId: ", deviceId, "StudentUnitId: ", req.StudentUnitId, " Error: ", err.Error())
 		response := models.UpdateAttendanceResponse{
 			MessageType: 6,
 			ErrorStatus: 1,
+			Index:       req.Index,
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -370,10 +408,11 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 		response := models.UpdateAttendanceResponse{
 			MessageType: 6,
 			ErrorStatus: 1,
+			Index:       req.Index,
 		}
 
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 		return
 	}
 
@@ -383,10 +422,11 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 			response := models.UpdateAttendanceResponse{
 				MessageType: 6,
 				ErrorStatus: 1,
+				Index:       req.Index,
 			}
 
 			responseJson, _ := json.Marshal(response)
-			client.Publish(deviceId, 1, false, responseJson)
+			p.publishResponse(client, deviceId, responseJson)
 			return
 		}
 
@@ -396,7 +436,7 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 			Index:       req.Index,
 		}
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 	} else {
 		att := new(models.Attendance)
 
@@ -410,10 +450,11 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 			response := models.UpdateAttendanceResponse{
 				MessageType: 6,
 				ErrorStatus: 1,
+				Index:       req.Index,
 			}
 
 			responseJson, _ := json.Marshal(response)
-			client.Publish(deviceId, 1, false, responseJson)
+			p.publishResponse(client, deviceId, responseJson)
 			return
 		}
 
@@ -423,7 +464,7 @@ func (p *messageProcessor) processAttendanceRequest(client mqtt.Client, deviceId
 			Index:       req.Index,
 		}
 		responseJson, _ := json.Marshal(response)
-		client.Publish(deviceId, 1, false, responseJson)
+		p.publishResponse(client, deviceId, responseJson)
 	}
 
 }
